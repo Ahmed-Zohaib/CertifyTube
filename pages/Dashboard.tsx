@@ -6,7 +6,7 @@ import Input from '../components/Input';
 import Button from '../components/Button';
 import CertificateCard from '../components/CertificateCard';
 import FullCertificate from '../components/FullCertificate';
-import { PlusCircle, Youtube, Loader2, Award } from 'lucide-react';
+import { PlusCircle, Youtube, Loader2, Award, AlertCircle } from 'lucide-react';
 
 interface DashboardPageProps {
   user: User;
@@ -20,7 +20,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
   
   // Quiz Generation State
   const [videoUrl, setVideoUrl] = useState('');
-  const [topic, setTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState('');
 
@@ -34,10 +33,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
       .finally(() => setLoadingCerts(false));
   }, [user.id]);
 
+  const isYouTubeShort = (url: string): boolean => {
+    return url.includes('youtube.com/shorts/');
+  };
+
   const handleCreateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!videoUrl) {
         setGenError("Please provide the video URL.");
+        return;
+    }
+    
+    if (isYouTubeShort(videoUrl)) {
+        setGenError("YouTube Shorts are not supported. Please use a full-length YouTube video.");
         return;
     }
     
@@ -46,12 +54,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
 
     try {
         // Use the service to generate questions AND get the detected topic (e.g. video title)
-        const { questions, derivedTopic } = await generateQuizFromTopic(topic, videoUrl);
+        const { questions, derivedTopic } = await generateQuizFromTopic(videoUrl);
         
         const newQuiz: Quiz = {
             id: Date.now().toString(),
             videoUrl,
-            // Use the derived topic (Video Title) if the user didn't provide one
             topic: derivedTopic,
             questions,
             createdAt: new Date().toISOString()
@@ -95,24 +102,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
                         value={videoUrl}
                         onChange={(e) => setVideoUrl(e.target.value)}
                     />
-                    
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                            Video Topic / Content Summary <span className="text-slate-400 font-normal">(Optional)</span>
-                        </label>
-                        <textarea 
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] text-sm"
-                            placeholder="e.g. Introduction to React Hooks, history of the Roman Empire..."
-                            value={topic}
-                            onChange={(e) => setTopic(e.target.value)}
-                        />
-                        <p className="text-xs text-slate-400 mt-1">
-                            If left blank, we'll try to fetch the video title automatically.
-                        </p>
-                    </div>
 
                     {genError && (
-                        <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100">
+                        <div className={`p-3 rounded-lg border flex items-start gap-2 ${genError.includes("Shorts") ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-red-50 border-red-100 text-red-600"}`}>
+                            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                             {genError}
                         </div>
                     )}
