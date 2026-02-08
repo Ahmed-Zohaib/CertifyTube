@@ -6,7 +6,8 @@ import Input from '../components/Input';
 import Button from '../components/Button';
 import CertificateCard from '../components/CertificateCard';
 import FullCertificate from '../components/FullCertificate';
-import { PlusCircle, Youtube, Loader2, Award, Sparkles, Zap } from 'lucide-react';
+import AnswerKeyModal from '../components/AnswerKeyModal'; // Corrected Import
+import { PlusCircle, Youtube, Loader2, Award, Sparkles, Zap, AlertCircle, BookOpen, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface DashboardPageProps {
@@ -17,10 +18,13 @@ interface DashboardPageProps {
 const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loadingCerts, setLoadingCerts] = useState(true);
+  
+  // View States
   const [viewingCert, setViewingCert] = useState<Certificate | null>(null);
+  const [viewingAnswers, setViewingAnswers] = useState<Certificate | null>(null); // Added State
+  const [activeTab, setActiveTab] = useState<'certificates' | 'answerKeys'>('certificates');
   
   const [videoUrl, setVideoUrl] = useState('');
-  const [topic, setTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState('');
 
@@ -31,20 +35,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
       .finally(() => setLoadingCerts(false));
   }, [user.id]);
 
+  const isYouTubeShort = (url: string): boolean => {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.includes('youtube.com') && urlObj.pathname.includes('/shorts/');
+    } catch {
+      return false;
+    }
+  };
+
   const handleCreateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!videoUrl || !topic) {
-        setGenError("Please provide both the video URL and the topic.");
+    if (!videoUrl) {
+        setGenError("Please provide a YouTube video URL.");
+        return;
+    }
+    if (isYouTubeShort(videoUrl)) {
+        setGenError("YouTube Shorts are not allowed. Please use a full-length video instead.");
         return;
     }
     setGenError('');
     setIsGenerating(true);
     try {
-        const questions = await generateQuizFromTopic(topic, videoUrl);
+        const { questions, derivedTopic, channelName } = await generateQuizFromTopic(videoUrl);
         const newQuiz: Quiz = {
             id: Date.now().toString(),
             videoUrl,
-            topic,
+            topic: derivedTopic,
+            channelName,
             questions,
             createdAt: new Date().toISOString()
         };
@@ -133,16 +151,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
                         className="bg-[#0f0f12] border-white/5 focus:border-purple-500/50 transition-all"
                     />
                   </div>
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-300 ml-1">Video Topic / Content Summary</label>
-                    <textarea 
-                        className="w-full px-4 py-3 bg-[#0f0f12] border border-white/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent min-h-[120px] text-sm text-slate-200 placeholder:text-slate-600 transition-all"
-                        placeholder="e.g. Master React Hooks in 10 minutes..."
-                        value={topic}
-                        onChange={(e) => setTopic(e.target.value)}
-                    />
-                  </div>
 
                   {genError && (
                     <div className="p-3 bg-red-500/10 text-red-400 text-xs rounded-xl border border-red-500/20">
@@ -166,20 +174,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
             </div>
           </motion.div>
 
-          {/* Certificates Section (Right) */}
+          {/* Right Column: Certificates / Answer Keys */}
           <motion.div 
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-8 space-y-8"
           >
-            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+            {/* Header + Tabs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-4 gap-4">
                <h2 className="text-2xl font-bold flex items-center gap-3">
                   <Award className="w-6 h-6 text-blue-400" />
-                  My Collection
+                  {activeTab === 'certificates' ? 'My Collection' : 'Answer Keys'}
                   <span className="bg-white/5 text-slate-400 text-xs py-1 px-3 rounded-full border border-white/10">
-                      {certificates.length} Earned
+                      {activeTab === 'certificates' 
+                        ? `${certificates.length} Earned` 
+                        : `${certificates.filter(c => c.questions && c.questions.length > 0).length} Available`}
                   </span>
                </h2>
+
+               {/* Tabs */}
+               <div className="flex bg-[#16161a] border border-white/10 p-1 rounded-xl">
+                   <button 
+                     onClick={() => setActiveTab('certificates')}
+                     className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'certificates' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                   >
+                     Certificates
+                   </button>
+                   <button 
+                     onClick={() => setActiveTab('answerKeys')}
+                     className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'answerKeys' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                   >
+                     Answer Keys
+                   </button>
+               </div>
             </div>
 
             {loadingCerts ? (
@@ -187,30 +214,80 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
                   <Loader2 className="w-10 h-10 text-purple-500 animate-spin mb-4" />
                   <p className="text-slate-500 animate-pulse">Fetching your achievements...</p>
                </div>
-            ) : certificates.length === 0 ? (
-                <div className="bg-[#16161a]/40 backdrop-blur-md border border-dashed border-white/10 rounded-3xl p-16 text-center">
-                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <Award className="w-10 h-10 text-slate-600" />
+            ) : activeTab === 'certificates' ? (
+                certificates.length === 0 ? (
+                    <div className="bg-[#16161a]/40 backdrop-blur-md border border-dashed border-white/10 rounded-3xl p-16 text-center">
+                        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Award className="w-10 h-10 text-slate-600" />
+                        </div>
+                        <h3 className="text-xl font-bold mb-2">Ready to start?</h3>
+                        <p className="text-slate-500 max-w-sm mx-auto">Complete assessments with an 80% score to populate your gallery with unique certificates.</p>
                     </div>
-                    <h3 className="text-xl font-bold mb-2">Ready to start?</h3>
-                    <p className="text-slate-500 max-w-sm mx-auto">Complete assessments with an 80% score to populate your gallery with unique certificates.</p>
-                </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {certificates.map((cert, index) => (
+                          <motion.div
+                            key={cert.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.1 }}
+                          >
+                            <CertificateCard 
+                               certificate={cert} 
+                               onClick={() => setViewingCert(cert)} 
+                            />
+                          </motion.div>
+                        ))}
+                    </div>
+                )
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {certificates.map((cert, index) => (
-                      <motion.div
-                        key={cert.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                      >
-                        <CertificateCard 
-                           certificate={cert} 
-                           onClick={() => setViewingCert(cert)} 
-                        />
-                      </motion.div>
-                    ))}
-                </div>
+                // Answer Keys Tab Content
+                (() => {
+                    const withKeys = certificates.filter(c => c.questions && c.questions.length > 0);
+                    if (withKeys.length === 0) {
+                        return (
+                            <div className="bg-[#16161a]/40 backdrop-blur-md border border-dashed border-white/10 rounded-3xl p-16 text-center">
+                                <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <BookOpen className="w-10 h-10 text-slate-600" />
+                                </div>
+                                <h3 className="text-xl font-bold mb-2">No keys available</h3>
+                                <p className="text-slate-500 max-w-sm mx-auto">Answer keys become available after you successfully complete an assessment.</p>
+                            </div>
+                        );
+                    }
+                    return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             {withKeys.map((cert, index) => (
+                                <motion.div 
+                                    key={cert.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: index * 0.1 }}
+                                    className="bg-[#16161a]/60 border border-white/5 hover:border-purple-500/30 p-5 rounded-2xl flex flex-col justify-between group transition-all"
+                                >
+                                    <div>
+                                        <h3 className="font-semibold text-lg text-white mb-1 line-clamp-2 group-hover:text-purple-400 transition-colors">{cert.topic}</h3>
+                                        <p className="text-xs text-slate-500 font-mono">
+                                            {new Date(cert.issuedAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <div className="mt-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-2 bg-green-500/10 px-2 py-1 rounded-md border border-green-500/20">
+                                            <CheckCircle className="w-3 h-3 text-green-500" />
+                                            <span className="text-xs font-bold text-green-400">{cert.score}%</span>
+                                        </div>
+                                        <button 
+                                            onClick={() => setViewingAnswers(cert)}
+                                            className="px-4 py-2 bg-white/5 hover:bg-white/10 text-sm font-medium rounded-lg text-white transition-colors"
+                                        >
+                                            Review Key
+                                        </button>
+                                    </div>
+                                </motion.div>
+                             ))}
+                        </div>
+                    );
+                })()
             )}
           </motion.div>
         </div>
@@ -220,6 +297,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onStartQuiz }) => {
               <FullCertificate 
                 certificate={viewingCert} 
                 onClose={() => setViewingCert(null)} 
+              />
+          )}
+          {viewingAnswers && (
+              <AnswerKeyModal 
+                certificate={viewingAnswers} 
+                onClose={() => setViewingAnswers(null)} 
               />
           )}
         </AnimatePresence>
